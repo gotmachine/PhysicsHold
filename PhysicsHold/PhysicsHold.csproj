@@ -298,7 +298,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>XCOPY /Y "$(TargetDir)PhysicsHold.dll" "K:\Projets\KSP\Kerbal Space Program 1.10.1 DEV\GameData\" 
-XCOPY /Y "$(TargetDir)PhysicsHold.pdb" "K:\Projets\KSP\Kerbal Space Program 1.10.1 DEV\GameData\"</PostBuildEvent>
+    <PostBuildEvent>XCOPY /Y "$(TargetDir)PhysicsHold.dll" "K:\Projets\KSP\Kerbal Space Program 1.10.1 DEV\GameData\PhysicsHold\" 
+XCOPY /Y "$(TargetDir)PhysicsHold.pdb" "K:\Projets\KSP\Kerbal Space Program 1.10.1 DEV\GameData\PhysicsHold\"</PostBuildEvent>
   </PropertyGroup>
 </Project>
