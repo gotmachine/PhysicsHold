@@ -6,12 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using UnityEngine;
-using KSP.UI.Screens;
 using Debug = UnityEngine.Debug;
-using UnityEngine.UI;
-using System.Text;
-using TMPro;
-using KSP.UI.TooltipTypes;
 
 /*
 This add a "Landed physics hold" PAW button on all command parts (and root part if no command part found), 
@@ -50,411 +45,11 @@ Untested / likely to have issues :
 
 namespace PhysicsHold
 {
-    [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public class PhysicsHoldManager : MonoBehaviour
-    {
-        private static StringBuilder sb = new StringBuilder();
-
-        public static PhysicsHoldManager Instance { get; private set; }
-
-        private List<PhysicsHold> physicsHoldInstances;
-
-        private ApplicationLauncherButton launcher;
-        private static Texture2D launcherTexture;
-
-        private static bool texturesAcquired = false;
-        private static Sprite aircraftTex;
-        private static Sprite baseTex;
-        private static Sprite commsRelayText;
-        private static Sprite debrisTex;
-        private static Sprite deployScienceTex;
-        private static Sprite landerTex;
-        private static Sprite probeTex;
-        private static Sprite roverTex;
-        private static Sprite shipTex;
-        private static Sprite spaceObjTex;
-        private static Sprite stationTex;
-
-        private static Tooltip_Text tooltipPrefab;
-
-        private PopupDialog currentDialog;
-        private static Vector2 lastPopupPos = Vector2.zero;
-
-        public static void AddInstance(PhysicsHold instance)
-        {
-            if (Instance == null)
-                return;
-
-            if (Instance.physicsHoldInstances.Contains(instance))
-                return;
-
-            Instance.physicsHoldInstances.Add(instance);
-            if (Instance.currentDialog != null)
-            {
-                Instance.DismissDialog();
-                Instance.ToggleDialog();
-            }
-        }
-
-        public static void RemoveInstance(PhysicsHold instance)
-        {
-            if (Instance == null)
-                return;
-
-            if (Instance.physicsHoldInstances.Remove(instance) && Instance.currentDialog != null)
-            {
-                Instance.DismissDialog();
-                Instance.ToggleDialog();
-            }
-        }
-
-        private void Awake()
-        {
-            GetVesselTypeIconReferences();
-
-            if (tooltipPrefab == null)
-            {
-                tooltipPrefab = AssetBase.GetPrefab<Tooltip_Text>("Tooltip_Text");
-            }
-
-            if (Instance != null)
-                Destroy(Instance);
-
-            Instance = this;
-            physicsHoldInstances = new List<PhysicsHold>();
-
-            if (launcherTexture == null)
-            {
-                launcherTexture = GameDatabase.Instance.GetTexture("PhysicsHold/icons8-strength-64", false);
-            }
-        }
-
-        private void Start()
-        {
-            if (lastPopupPos == Vector2.zero)
-            {
-                lastPopupPos = new Vector2(0.1f, 0.9f);
-            }
-
-            launcher = ApplicationLauncher.Instance.AddModApplication(null, null, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT, launcherTexture);
-            //launcher.VisibleInScenes = ApplicationLauncher.AppScenes.FLIGHT;
-            launcher.onLeftClick += ToggleDialog;
-
-            AddTooltipToObject(launcher.gameObject, "Physics hold");
-        }
-
-        private void OnDestroy()
-        {
-            if (launcher != null)
-            {
-                launcher.onLeftClick -= ToggleDialog;
-                ApplicationLauncher.Instance.RemoveModApplication(launcher);
-                launcher = null;
-            }
-
-            DismissDialog();
-        }
-
-        private bool DismissDialog()
-        {
-            if (currentDialog != null)
-            {
-                float xPos = (currentDialog.RTrf.position.x / (Screen.width)) + 0.5f;
-                float yPos = (currentDialog.RTrf.position.y / (Screen.height)) + 0.5f;
-
-                lastPopupPos = new Vector2(xPos, yPos);
-                currentDialog.Dismiss();
-                currentDialog = null;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void ToggleDialog()
-        {
-            if (DismissDialog())
-                return;
-
-            List<Vessel> itemVessels = new List<Vessel>();
-
-            List<DialogGUILabel> vesselTitles = new List<DialogGUILabel>();
-
-            List<DialogGUIButton> deformationButtons = new List<DialogGUIButton>();
-
-            List<DialogGUIButton> switchToButtons = new List<DialogGUIButton>();
-
-            List<DialogGUIBase> dialog = new List<DialogGUIBase>();
-
-            List<DialogGUIBox> vesselItems = new List<DialogGUIBox>();
-
-            for (int i = 0; i < physicsHoldInstances.Count; i++)
-            {
-                PhysicsHold instance = physicsHoldInstances[i];
-
-                DialogGUILabel vesselTitle = new DialogGUILabel(() => GetVesselName(instance), 270f);
-                vesselTitles.Add(vesselTitle);
-
-                DialogGUIToggle holdToggle = new DialogGUIToggle(() => instance.physicsHold, "Physics hold", instance.OnToggleHold, -1f, 24f);
-                holdToggle.OptionInteractableCondition += instance.CanTogglePhysicsHold;
-
-                DialogGUIButton deformationButton = new DialogGUIButton("Make physics deformation permanent", () => instance.OnApplyDeformation(), false);
-                deformationButton.OptionInteractableCondition += instance.CanApplyDeformation;
-                deformationButton.size = new Vector2(270f, 22f);
-                deformationButtons.Add(deformationButton);
-
-                DialogGUIVerticalLayout vesselInfo = new DialogGUIVerticalLayout(
-                    vesselTitle,
-                    new DialogGUILabel(() => GetVesselState(instance)));
-                vesselInfo.padding = new RectOffset(5, 0, 0, 0);
-
-                DialogGUIButton switchToButton = new DialogGUIButton(string.Empty, () => FlightGlobals.SetActiveVessel(instance.Vessel), 28f, 28f, false);
-                switchToButton.OptionInteractableCondition += () => instance.Vessel.loaded && !instance.Vessel.isActiveVessel;
-                switchToButtons.Add(switchToButton);
-
-                DialogGUIHorizontalLayout boxTopSection = new DialogGUIHorizontalLayout(
-                    switchToButton,
-                    vesselInfo);
-                boxTopSection.anchor = TextAnchor.MiddleLeft;
-
-                DialogGUIVerticalLayout boxContent = new DialogGUIVerticalLayout(
-                    boxTopSection,
-                    holdToggle,
-                    deformationButton);
-
-                boxContent.padding = new RectOffset(5, 5, 5, 0);
-
-                DialogGUIBox vesselItem = new DialogGUIBox("", 280f, 105f, null, boxContent);
-
-                if (instance.Vessel.isActiveVessel)
-                {
-                    vesselItems.Insert(0, vesselItem);
-                    itemVessels.Insert(0, instance.Vessel);
-                }
-                else
-                {
-                    vesselItems.Add(vesselItem);
-                    itemVessels.Add(instance.Vessel);
-                }
-            }
-
-            DialogGUIBase[] scrollList = new DialogGUIBase[vesselItems.Count + 1];
-
-            scrollList[0] = new DialogGUIContentSizer(ContentSizeFitter.FitMode.Unconstrained, ContentSizeFitter.FitMode.PreferredSize, true);
-
-            for (int i = 0; i < vesselItems.Count; i++)
-                scrollList[i + 1] = vesselItems[i];
-
-            DialogGUIScrollList scrollListItem = new DialogGUIScrollList(Vector2.one, false, true,
-                new DialogGUIVerticalLayout(10, 100, 4, new RectOffset(6, 24, 10, 10), TextAnchor.UpperLeft, scrollList));
-
-            dialog.Add(scrollListItem);
-            dialog.Add(new DialogGUIButton("Close", () => DismissDialog()));
-
-            Rect posAndSize = new Rect(lastPopupPos.x, lastPopupPos.y, 320f, 420f);
-
-            currentDialog = PopupDialog.SpawnPopupDialog(new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new MultiOptionDialog("", "Keep physics in check for landed vessels !", "Physics Hold", UISkinManager.defaultSkin, posAndSize, dialog.ToArray()), true, UISkinManager.defaultSkin, false);
-
-            TextMeshProUGUI subText = currentDialog.gameObject.GetChild("UITextPrefab(Clone)")?.GetComponent<TextMeshProUGUI>();
-            if (subText != null)
-            {
-                subText.alignment = TextAlignmentOptions.Center;
-                subText.color = Color.white;
-                subText.fontStyle = FontStyles.Bold;
-            }
-
-
-            ScrollRect scrollRect = scrollListItem.uiItem.GetComponentInChildren<ScrollRect>();
-            scrollRect.content.pivot = new Vector2(0f, 1f);
-
-            foreach (DialogGUILabel vesselTitle in vesselTitles)
-            {
-                vesselTitle.text.color = Color.white;
-                vesselTitle.text.fontStyle = FontStyles.Bold;
-            }
-
-            foreach (DialogGUIButton deformationButton in deformationButtons)
-            {
-                TextMeshProUGUI text = deformationButton.uiItem.GetChild("Text").GetComponent<TextMeshProUGUI>();
-                text.fontSizeMin = 12f;
-                text.fontSizeMax = 12f;
-                text.fontSize = 12f;
-
-                AddTooltipToObject(deformationButton.uiItem,
-                    "Move parts position according to the current \ndeformation due to gravity and external forces.\n" +
-                    "Reduce joint stress and prevent kraken attacks \nwhen landed on an uneven surface.\n\n" +
-                    "WARNING :\nWill permanently deform the vessel on every use !");
-            }
-
-            ColorBlock buttonColors = new ColorBlock()
-            {
-                colorMultiplier = 1f,
-                normalColor = Color.white,
-                selectedColor = Color.white,
-                highlightedColor = new Color(0.9f, 1f, 1f, 1f),
-                pressedColor = new Color(0.8f, 1f, 1f, 1f),
-                disabledColor = new Color(1f, 1f, 1f, 0.8f)
-            };
-
-            for (int i = 0; i < switchToButtons.Count; i++)
-            {
-                DialogGUIButton switchToButton = switchToButtons[i];
-                Vessel vessel = itemVessels[i];
-
-                AddTooltipToObject(switchToButton.uiItem, "Make active");
-
-                Image imgCpnt = switchToButton.uiItem.GetComponent<Image>();
-                imgCpnt.type = Image.Type.Simple;
-                imgCpnt.preserveAspect = true;
-                imgCpnt.color = Color.white;
-                imgCpnt.sprite = GetVesselTypeIcon(vessel);
-
-                Button btnCpnt = switchToButton.uiItem.GetComponent<Button>();
-                btnCpnt.transition = Selectable.Transition.ColorTint;
-                btnCpnt.navigation = new Navigation() { mode = Navigation.Mode.None };
-                btnCpnt.colors = buttonColors;
-                btnCpnt.image = imgCpnt;
-            }
-        }
-
-        private string GetVesselName(PhysicsHold instance)
-        {
-            sb.Clear();
-            int length = instance.Vessel.vesselName.Length;
-            if (length > 40)
-            {
-                sb.Append(instance.Vessel.vesselName.Substring(0, 30));
-                sb.Append("...");
-                sb.Append(instance.Vessel.vesselName.Substring(length - 10, 10));
-            }
-            else
-            {
-                sb.Append(instance.Vessel.vesselName);
-            }
-
-            return sb.ToString();
-        }
-
-        private string GetVesselState(PhysicsHold instance)
-        {
-            sb.Clear();
-
-            if (instance.Vessel.isActiveVessel)
-            {
-                sb.Append("ACTIVE VESSEL - ");
-            }
-
-            if (instance.Vessel.Landed)
-            {
-                sb.Append("landed");
-            }
-            else
-            {
-                sb.Append("not landed");
-            }
-
-            if (instance.physicsHold)
-            {
-                sb.Append(", physics on hold");
-            }
-            else if (instance.Vessel.packed)
-            {
-                sb.Append(", packed");
-            }
-            else
-            {
-                sb.Append(", in physics");
-            }
-
-            return sb.ToString();
-        }
-
-
-        private Sprite GetVesselTypeIcon(Vessel vessel)
-        {
-            if (!texturesAcquired)
-                return null;
-
-            switch (vessel.vesselType)
-            {
-                case VesselType.Debris:
-                    return debrisTex;
-                case VesselType.SpaceObject:
-                    return spaceObjTex;
-                case VesselType.Probe:
-                    return probeTex;
-                case VesselType.Relay:
-                    return commsRelayText;
-                case VesselType.Rover:
-                    return roverTex;
-                case VesselType.Lander:
-                    return landerTex;
-                case VesselType.Ship:
-                    return shipTex;
-                case VesselType.Plane:
-                    return aircraftTex;
-                case VesselType.Station:
-                    return stationTex;
-                case VesselType.Base:
-                    return baseTex;
-                case VesselType.DeployedScienceController:
-                case VesselType.DeployedSciencePart:
-                    return deployScienceTex;
-                default:
-                    return shipTex;
-            }
-        }
-
-        private static void AddTooltipToObject(GameObject obj, string text)
-        {
-            TooltipController_Text tooltip = obj.GetComponent<TooltipController_Text>();
-            if (tooltip == null)
-                tooltip = obj.AddComponent<TooltipController_Text>();
-
-            tooltip.prefab = tooltipPrefab;
-            tooltip.SetText(text);
-        }
-
-        private static void GetVesselTypeIconReferences()
-        {
-            if (texturesAcquired)
-                return;
-
-            try
-            {
-                texturesAcquired = true;
-
-                VesselRenameDialog prefab = AssetBase.GetPrefab("VesselRenameDialog").GetComponent<VesselRenameDialog>();
-                Type rdType = typeof(VesselRenameDialog);
-                BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-
-                aircraftTex = ((TypeButton)rdType.GetField("toggleAircraft", flags).GetValue(prefab)).icon.sprite;
-                baseTex = ((TypeButton)rdType.GetField("toggleBase", flags).GetValue(prefab)).icon.sprite;
-                commsRelayText = ((TypeButton)rdType.GetField("toggleCommunicationsRelay", flags).GetValue(prefab)).icon.sprite;
-                debrisTex = ((TypeButton)rdType.GetField("toggleDebris", flags).GetValue(prefab)).icon.sprite;
-                deployScienceTex = ((TypeButton)rdType.GetField("toggleDeployedScience", flags).GetValue(prefab)).icon.sprite;
-                landerTex = ((TypeButton)rdType.GetField("toggleLander", flags).GetValue(prefab)).icon.sprite;
-                probeTex = ((TypeButton)rdType.GetField("toggleProbe", flags).GetValue(prefab)).icon.sprite;
-                roverTex = ((TypeButton)rdType.GetField("toggleRover", flags).GetValue(prefab)).icon.sprite;
-                shipTex = ((TypeButton)rdType.GetField("toggleShip", flags).GetValue(prefab)).icon.sprite;
-                spaceObjTex = ((TypeButton)rdType.GetField("toggleSpaceObj", flags).GetValue(prefab)).icon.sprite;
-                stationTex = ((TypeButton)rdType.GetField("toggleStation", flags).GetValue(prefab)).icon.sprite;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Could not acquire vessel icons !\n{e}");
-                texturesAcquired = false;
-            }
-        }
-
-
-    }
-
-
-    public class PhysicsHold : VesselModule
+    public class VesselPhysicsHold : VesselModule
     {
         private static FieldInfo framesAtStartupFieldInfo;
+        private static string cacheAutoLOC_459494;
+        private static MethodInfo KerbalPortrait_CanEVA;
 
         private static bool staticInitDone = false;
 
@@ -465,14 +60,10 @@ namespace PhysicsHold
         private bool isEnabled = true;
 
         private Vessel lastDecoupledVessel;
-        private bool hasNeverBeenUnpacked;
         private bool delayedPhysicsHoldEnableRequest;
         private bool isChangingState;
 
-        private string landedAt;
-        private string landedAtLast;
-        private string displaylandedAt;
-
+        public bool HasRobotics { get; private set; }
 
         public override bool ShouldBeActive()
         {
@@ -502,6 +93,26 @@ namespace PhysicsHold
                     staticInitDone = false;
                 }
 
+                try
+                {
+                    cacheAutoLOC_459494 = (string)typeof(KerbalPortrait).GetField("cacheAutoLOC_459494", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"Cant find the EVA available tooltip AUTOLOC\n{e}");
+                    cacheAutoLOC_459494 = string.Empty;
+                }
+
+                try
+                {
+                    KerbalPortrait_CanEVA = typeof(KerbalPortrait).GetMethod("CanEVA", BindingFlags.Instance | BindingFlags.NonPublic);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Cant find the KerbalPortrait.CanEVA method\n{e}");
+                    staticInitDone = false;
+                }
+
                 if (!staticInitDone)
                 {
                     isEnabled = false;
@@ -518,24 +129,14 @@ namespace PhysicsHold
                 return;
             }
 
-            LogDebug($"Starting for {vessel.vesselName}, physicsHold={physicsHold}");
-
-            PhysicsHoldManager.AddInstance(this);
+            Lib.LogDebug($"Starting for {vessel.vesselName}, physicsHold={physicsHold}");
 
             lastDecoupledVessel = null;
-            // vesselPrecalulateLastEasing = null;
             delayedPhysicsHoldEnableRequest = false;
             isChangingState = false;
-            landedAt = vessel.landedAt;
-            landedAtLast = vessel.landedAtLast;
-            displaylandedAt = vessel.displaylandedAt;
 
-            if (physicsHold)
-            {
-                StartCoroutine(AddCallbacksDelayed());
-            }
-
-            hasNeverBeenUnpacked = physicsHold;
+            StartCoroutine(SetupDockingNodesHoldState());
+            StartCoroutine(WaitForVesselInitDoneOnLoad());
 
             GameEvents.onPartCouple.Add(OnPartCouple); // before docking/coupling
             GameEvents.onPartCoupleComplete.Add(OnPartCoupleComplete); // after docking/coupling
@@ -547,12 +148,25 @@ namespace PhysicsHold
             GameEvents.onVesselsUndocking.Add(OnVesselsUndocking); // after docking
         }
 
+        private IEnumerator WaitForVesselInitDoneOnLoad()
+        {
+            while (!FlightGlobals.VesselsLoaded.Contains(vessel) || vessel.vesselName == null)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            PhysicsHoldManager.AddInstance(this);
+
+            if (physicsHold)
+            {
+                DoPostOnGoOnRailsTweaks(false, true);
+            }
+        }
+
         public override void OnUnloadVessel()
         {
             PhysicsHoldManager.RemoveInstance(this);
-
             ClearEvents();
-            RemoveTimingManagerCallbacks();
         }
 
         private void ClearEvents()
@@ -573,174 +187,34 @@ namespace PhysicsHold
                 return;
 
             ClearEvents();
-            RemoveTimingManagerCallbacks();
         }
 
         #endregion
 
         #region UPDATE
 
-        private void AddTimingManagerCallbacks()
-        {
-            TimingManager.FixedUpdateAdd(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.FixedUpdateAdd(TimingManager.TimingStage.FashionablyLate, PackedSet);
-
-            TimingManager.UpdateAdd(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.UpdateAdd(TimingManager.TimingStage.FashionablyLate, PackedSet);
-
-            TimingManager.LateUpdateAdd(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.LateUpdateAdd(TimingManager.TimingStage.FashionablyLate, PackedSet);
-        }
-
-        private void RemoveTimingManagerCallbacks()
-        {
-            isChangingState = false;
-
-            if (vessel.precalc != null)
-                typeof(VesselPrecalculate).GetField("easing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(vessel.precalc, false);
-
-            TimingManager.FixedUpdateRemove(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.FixedUpdateRemove(TimingManager.TimingStage.FashionablyLate, PackedSet);
-
-            TimingManager.UpdateRemove(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.UpdateRemove(TimingManager.TimingStage.FashionablyLate, PackedSet);
-
-            TimingManager.LateUpdateRemove(TimingManager.TimingStage.Earlyish, PackedUnset);
-            TimingManager.LateUpdateRemove(TimingManager.TimingStage.FashionablyLate, PackedSet);
-        }
-
-        private void PackedUnset()
-        {
-            if (physicsHold)
-            {
-                // Vessel.checkLanded() is called from various places, notably ModuleWheelBase.FixedUpdate()
-                // Normally, when called while vessel.packed is true, it will skip the actual checking code and just
-                // return the current Vessel.Landed value. But if packed is false, it will execute some code only
-                // meant to be called while unpacked, and it will not only always return false, but also set Vessel.Landed
-                // to false, which will break everything. The exact condition of Vessel.checkLanded() is :
-                // "if (loaded && !packed && !precalc.isEasingGravity)"
-                // precalc.isEasingGravity is a property with a "easing" private backing field. In stock, the property is
-                // only used in Vessel.checkLanded(), and VesselPrecalulate read/write the backing field from its FixedUpdate.
-                // So the workaround here is to set "VesselPrecalulate.easing" to true during the "Earlyish to FashionablyLate"
-                // execution window to make sure Vessel.checkLanded() always work as expected. VesselPrecalulate has an
-                // execution order of -102, before Earlyish, so we won't trigger side effects.
-                // This is still quite brittle, but outside of harmony-patching Vessel.checkLanded() we haven't got many options...
-                // vesselPrecalulateLastEasing = vessel.precalc.isEasingGravity;
-
-
-
-                // we can't set the property because it will trigger the vessel easing code in its setter, so we set the backing field
-                //typeof(VesselPrecalculate).GetField("easing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(vessel.precalc, true);
-
-
-                vessel.Landed = true;
-                vessel.landedAt = landedAt;
-                vessel.landedAtLast = landedAtLast;
-                vessel.displaylandedAt = displaylandedAt;
-
-                if (TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRate > TimeWarp.MaxPhysicsRate)
-                    return;
-
-                vessel.packed = false;
-                foreach (Part part in vessel.parts)
-                {
-                    part.packed = false;
-                }
-            }
-            else
-            {
-                // vesselPrecalulateLastEasing = null;
-            }
-        }
-
-        private void PackedSet()
-        {
-            if (physicsHold)
-            {
-                //if (vesselPrecalulateLastEasing != null)
-                //{
-                //    typeof(VesselPrecalculate).GetField("easing", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(vessel.precalc, (bool)vesselPrecalulateLastEasing);
-                //}
-
-                vessel.Landed = true;
-                vessel.landedAt = landedAt;
-                vessel.landedAtLast = landedAtLast;
-                vessel.displaylandedAt = displaylandedAt;
-
-                vessel.packed = true;
-                foreach (Part part in vessel.parts)
-                {
-                    part.packed = true;
-                }
-            }
-
-            // vesselPrecalulateLastEasing = null;
-        }
-
-        private IEnumerator AddCallbacksDelayed()
-        {
-            LogDebug($"Starting on hold : adding TimingManager callbacks for {vessel.vesselName}, landed={vessel.Landed}, packed={vessel.packed}");
-            framesAtStartupFieldInfo.SetValue(vessel, Time.frameCount);
-
-            isChangingState = true;
-
-            // When Start() is called, VesselPrecalculate/OrbitDriver will already have started run their FixedUpdate()
-            // while the packed flags were true. But FlightIntegrator/Krakensbane/FloatingOrigin haven't been started yet.
-            // If we unset the packed flags right away, they will assume the vessel isn't packed and use the in-physics
-            // position calcs. So we delay our un-setting of the packed flags. To be one the safe side, we make sure we skip
-            // a few update/fixedUpdate (there is no rush, we are preventing the vessel from being unpacked by resetting
-            // "framesAtStartup" every update).
-            for (int i = 0; i < 5; i++)
-            {
-                yield return new WaitForFixedUpdate(); // this is probably unnecessary, but just in case
-                yield return new WaitForEndOfFrame();
-                LogDebug($"Starting on hold : skipping Frame for {vessel.vesselName}, landed={vessel.Landed}, packed={vessel.packed}");
-            }
-
-            LogDebug($"Starting on hold : removing packed flags for {vessel.vesselName}, landed={vessel.Landed}, packed={vessel.packed}");
-
-            AddTimingManagerCallbacks();
-
-
-            isChangingState = false;
-        }
 
         private void EnablePhysicsHold()
         {
             if (physicsHold || !vessel.Landed)
                 return;
 
-            LogDebug($"Enabling physics hold for {vessel.vesselName}");
+            Lib.LogDebug($"Enabling physics hold for {vessel.vesselName}");
 
             physicsHold = true;
 
-            landedAt = vessel.landedAt;
-            landedAtLast = vessel.landedAtLast;
-            displaylandedAt = vessel.displaylandedAt;
-
             vessel.GoOnRails();
 
-            StartCoroutine(AddCallbacksDelayed());
+            DoPostOnGoOnRailsTweaks(false, true);
         }
 
         private void DisablePhysicsHold(bool immediate)
         {
-            LogDebug($"Disabling physics hold ({vessel.vesselName})");
-
-            RemoveTimingManagerCallbacks();
+            Lib.LogDebug($"Disabling physics hold ({vessel.vesselName})");
 
             physicsHold = false;
 
             vessel.Landed = true;
-            vessel.landedAt = landedAt;
-            vessel.landedAtLast = landedAtLast;
-            vessel.displaylandedAt = displaylandedAt;
-
-            vessel.packed = true;
-            foreach (Part part in vessel.Parts)
-            {
-                part.packed = true;
-            }
 
             // THIS WORKS, BUT TRYING SOMETHING ELSE
             //if (hasNeverBeenUnpacked)
@@ -785,12 +259,39 @@ namespace PhysicsHold
             }
         }
 
+        // KerbalPortrait will prevent the "go to EVA" button from working if Part.packed is true (no such limitation on the "crew transfer" PAW UI)
+        // This is done in Update(), so we un-do it in LateUpdate()
+        public void LateUpdate()
+        {
+            if (!vessel.isActiveVessel || !physicsHold || KerbalPortraitGallery.Instance == null)
+                return;
+
+            foreach (KerbalPortrait kp in KerbalPortraitGallery.Instance.Portraits)
+            {
+                if (kp.hoverArea.Hover && !kp.evaButton.interactable && kp.crewMember != null)
+                {
+                    kp.crewMember.InPart.packed = false;
+
+                    try
+                    {
+                        kp.evaButton.interactable = (bool)KerbalPortrait_CanEVA.Invoke(kp, null);
+                    }
+                    catch (Exception) { }
+
+                    kp.crewMember.InPart.packed = true;
+
+                    if (kp.evaButton.interactable)
+                        kp.evaTooltip.textString = cacheAutoLOC_459494;
+                }
+            }
+        }
+
         public void FixedUpdate()
         {
-            if (delayedPhysicsHoldEnableRequest)
+            if (delayedPhysicsHoldEnableRequest && vessel.Landed)
             {
                 delayedPhysicsHoldEnableRequest = false;
-                vessel.Landed = true;
+
                 EnablePhysicsHold();
             }
         }
@@ -851,8 +352,8 @@ namespace PhysicsHold
             if (physicsHold || vessel.packed)
                 return false;
 
-            // can't toggle if not landed, or if surface speed is higher than 0.1 m/s
-            if (!vessel.Landed || vessel.srfSpeed > 0.1)
+            // can't toggle if not landed, or if surface speed is higher than 0.05 m/s
+            if (!vessel.Landed || vessel.srfSpeed > 0.05)
                 return false;
 
             return true;
@@ -876,6 +377,37 @@ namespace PhysicsHold
             vessel.GoOnRails();
         }
 
+        public bool CanToggleRobotics()
+        {
+            // Can't toggle during timewarp
+            if (TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRate > TimeWarp.MaxPhysicsRate)
+                return false;
+
+            if (isChangingState || !HasRobotics)
+                return false;
+
+            return true;
+        }
+
+        public void OnToggleRobotics(bool enabled)
+        {
+            if (!enabled && roboticsOverride)
+            {
+                roboticsOverride = false;
+                if (physicsHold)
+                {
+                    DoPostOnGoOnRailsTweaks(true, true);
+                }
+            }
+            else if (enabled && !roboticsOverride)
+            {
+                roboticsOverride = true;
+                if (physicsHold)
+                {
+                    DoPostOnGoOnRailsTweaks(false, true);
+                }
+            }
+        }
 
         #endregion
 
@@ -887,13 +419,13 @@ namespace PhysicsHold
         // is about to be removed following a docking / coupling operation.
         private void OnPartCouple(GameEvents.FromToAction<Part, Part> data)
         {
-            LogDebug($"OnPartCouple on {vessel.vesselName}, docked vessel : {data.from.vessel.vesselName}, dominant vessel : {data.to.vessel.vesselName}");
+            Lib.LogDebug($"OnPartCouple on {vessel.vesselName}, docked vessel : {data.from.vessel.vesselName}, dominant vessel : {data.to.vessel.vesselName}");
 
             // in the case of KIS-adding parts, from / to vessel are the same : 
             // we ignore the event and just pack the part.
             if (data.from.vessel == data.to.vessel && data.from.vessel == vessel && physicsHold)
             {
-                data.from.Pack(); // TODO : test if KIS-adding works, and that the joint is properly created after a scene reload even if the vessel has never been unpacked
+                OnPackPartTweaks(data.from, true, false, true);
                 return;
             }
                 
@@ -914,13 +446,12 @@ namespace PhysicsHold
                 if (physicsHold)
                 {
                     DisablePhysicsHold(true);
-                    PhysicsHold fromInstance = data.to.vessel.GetComponent<PhysicsHold>();
+                    VesselPhysicsHold fromInstance = data.to.vessel.GetComponent<VesselPhysicsHold>();
                     fromInstance.delayedPhysicsHoldEnableRequest = true;
                 }
 
                 physicsHold = false;
                 ClearEvents();
-                RemoveTimingManagerCallbacks();
                 isEnabled = false;
             }
 
@@ -931,7 +462,7 @@ namespace PhysicsHold
 
                 foreach (Part part in data.from.vessel.Parts)
                 {
-                    part.Pack();
+                    OnPackPartTweaks(part, true, false, true);
                 }
             }
         }
@@ -939,7 +470,7 @@ namespace PhysicsHold
         // Called after a docking/coupling action has happend. All parts now belong to the same vessel.
         private void OnPartCoupleComplete(GameEvents.FromToAction<Part, Part> data)
         {
-            LogDebug($"OnPartCoupleComplete on {vessel.vesselName} from {data.from.vessel.vesselName} to {data.to.vessel.vesselName}");
+            Lib.LogDebug($"OnPartCoupleComplete on {vessel.vesselName} from {data.from.vessel.vesselName} to {data.to.vessel.vesselName}");
 
             if (data.from.vessel != vessel)
                 return;
@@ -1000,15 +531,14 @@ namespace PhysicsHold
         // called after a new vessel is created following undocking
         private void OnVesselsUndocking(Vessel oldVessel, Vessel newVessel)
         {
-            LogDebug($"OnVesselsUndocking called on {vessel.vesselName}, oldVessel {oldVessel.vesselName}, newVessel {newVessel.vesselName}");
+            Lib.LogDebug($"OnVesselsUndocking called on {vessel.vesselName}, oldVessel {oldVessel.vesselName}, newVessel {newVessel.vesselName}");
 
             if (vessel != oldVessel)
                 return;
 
             if (delayedPhysicsHoldEnableRequest)
             {
-                PhysicsHold newVesselHoldInstance = newVessel.GetComponent<PhysicsHold>();
-                newVesselHoldInstance.hasNeverBeenUnpacked = true;
+                VesselPhysicsHold newVesselHoldInstance = newVessel.GetComponent<VesselPhysicsHold>();
                 newVesselHoldInstance.delayedPhysicsHoldEnableRequest = true;
             }
         }
@@ -1040,250 +570,161 @@ namespace PhysicsHold
             return setupDone;
         }
 
-        // ModuleDockingNode FSM hacking, not needed but keeping it for reference in case we want to try enabling
-        // docking a packed vessel
-        //private IEnumerator SetupDockingNodesHoldState()
-        //{
-        //    foreach (Part part in vessel.Parts)
-        //    {
-        //        // part.dockingPorts is populated from Awake()
-        //        foreach (PartModule partModule in part.dockingPorts)
-        //        {
-        //            if (!(partModule is ModuleDockingNode dockingNode))
-        //                continue;
+        //ModuleDockingNode FSM hacking, not needed but keeping it for reference in case we want to try enabling
+        //docking a packed vessel
+        private IEnumerator SetupDockingNodesHoldState()
+        {
+            foreach (Part part in vessel.Parts)
+            {
+                // part.dockingPorts is populated from Awake()
+                foreach (PartModule partModule in part.dockingPorts)
+                {
+                    if (!(partModule is ModuleDockingNode dockingNode))
+                        continue;
 
-        //            while (dockingNode.st_ready == null)
-        //            {
-        //                yield return null;
-        //            }
+                    while (dockingNode.st_ready == null)
+                    {
+                        yield return null;
+                    }
 
-        //            // we can't remove the existing stock delegate calling "otherNode = FindNodeApproaches()", so 
-        //            // we add our own delegate that will be called after the stock one, with our patched method.
-        //            dockingNode.st_ready.OnFixedUpdate += delegate { FindNodeApproachesPatched(dockingNode); };
-        //        }
-        //    }
-        //    yield break;
-        //}
+                    if (dockingNode.st_ready.OnFixedUpdate.GetInvocationList().Length > 1)
+                        continue;
+
+                    // we can't remove the existing stock delegate, so we add our own that will be called 
+                    // after the stock one, with our patched method.
+                    dockingNode.st_ready.OnFixedUpdate += delegate { FindNodeApproachesPatched(dockingNode); };
+                }
+            }
+            yield break;
+        }
 
         /// <summary>
         /// Call the stock ModuleDockingNode.FindNodeApproaches(), and prevent it to ignore the vessels we are putting
         /// on physics hold by temporary setting Vessel.packed to false. Not that there is also a check on the Part.packed
         /// field, but we don't need to handle it since we don't pack parts that have a ModuleDockingNode in a ready state.
         /// </summary>
-        //private void FindNodeApproachesPatched(ModuleDockingNode dockingNode)
-        //{
-        //    if (PhysicsHoldManager.fetch == null || PhysicsHoldManager.fetch.onHoldAndPackedInstances.Count == 0)
-        //        return;
-
-        //    foreach (PhysicsHold instance in PhysicsHoldManager.fetch.onHoldAndPackedInstances)
-        //    {
-        //        instance.vessel.packed = false;
-        //    }
-
-        //    try
-        //    {
-        //        dockingNode.otherNode = dockingNode.FindNodeApproaches();
-        //    }
-        //    catch (Exception e)
-        //    {
-        //        Debug.LogError($"ModuleDockingNode threw during FindNodeApproaches\n{e}");
-        //    }
-        //    finally
-        //    {
-        //        foreach (PhysicsHold instance in PhysicsHoldManager.fetch.onHoldAndPackedInstances)
-        //        {
-        //            instance.vessel.packed = true;
-        //        }
-        //    } 
-        //}
-
-        //private void ApplyPackedTweaks()
-        //{
-        //    foreach (Part part in vessel.Parts)
-        //    {
-        //        if (ShouldPartIgnorePack(part))
-        //        {
-        //            part.Unpack();
-        //        }
-
-        //        StopRoboticControllers(part);
-        //    }
-        //}
-
-        //private bool ShouldPartIgnorePack(Part part)
-        //{
-        //    if (vessel.GetReferenceTransformPart() == part)
-        //    {
-        //        return false;
-        //    }
-
-        //    foreach (PartModule module in part.Modules)
-        //    {
-        //        if (module is ModuleDeployablePart mdp && mdp.deployState != ModuleDeployablePart.DeployState.BROKEN && (mdp.hasPivot || mdp.panelBreakTransform != null))
-        //        {
-        //            return true;
-        //        }
-        //        // mdn.state is persisted FSM state and is synchronized from Update(). A bit brittle, but we need
-        //        // to be able to check it from Start() when docking node modules won't have initialized their FSM yet.
-        //        else if (module is ModuleDockingNode mdn && mdn.state == "Ready") 
-        //        {
-        //            return true;
-        //        }
-        //    }
-        //    return false;
-        //}
-
-        //private void StopRoboticControllers(Part part)
-        //{
-        //    foreach (PartModule module in part.Modules)
-        //    {
-        //        if (module is ModuleRoboticController mrc)
-        //        {
-        //            mrc.SequenceStop();
-        //        }
-        //    }
-        //}
-
-        //private void EnableRobotics()
-        //{
-        //    List<Part> roboticParts = new List<Part>();
-        //    UnpackRoboticChilds(roboticParts, vessel.rootPart, false);
-
-        //    foreach (Part part in roboticParts)
-        //    {
-        //        part.Unpack();
-        //    }
-        //}
-
-        //private void UnpackRoboticChilds(List<Part> roboticParts, Part part, bool parentIsRobotic)
-        //{
-        //    if (!parentIsRobotic && part.isRobotic())
-        //    {
-        //        parentIsRobotic = true;
-        //    }
-
-        //    if (parentIsRobotic)
-        //    {
-        //        if (part.vessel.rootPart == part)
-        //        {
-        //            roboticParts.Clear();
-        //            ScreenMessages.PostScreenMessage($"Can't enable robotics, the vessel control part\n{part.partInfo.title}\nis a child of a robotic part");
-        //            return;
-        //        }
-
-        //        roboticParts.Add(part);
-        //    }
-
-        //    foreach (Part child in part.children)
-        //    {
-        //        UnpackRoboticChilds(roboticParts, child, parentIsRobotic);
-        //    }
-        //}
-
-        #endregion
-
-        #region UTILS
-
-        [Conditional("Debug")]
-        private static void LogDebug(string message)
+        private void FindNodeApproachesPatched(ModuleDockingNode dockingNode)
         {
-            Debug.Log($"[PhysicsHold] {message}");
-        }
+            if (PhysicsHoldManager.Instance == null || PhysicsHoldManager.Instance.OnHoldAndPackedInstances.Count == 0)
+                return;
 
-        #endregion
-    }
-
-    public class ModulePackedDebugTest : PartModule
-    {
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        bool partPacked;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        bool vesselPacked;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        bool vesselLanded;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string isKinematic = "no RigidBody";
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        bool physicsHold;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string orbitDriver = string.Empty;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string vSituation = string.Empty;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string vHeightFromTerrain = string.Empty;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string dockFSMState = string.Empty;
-
-        [UI_Label(scene = UI_Scene.Flight, requireFullControl = false)]
-        [KSPField(guiActive = true, guiActiveUnfocused = true, unfocusedRange = 500f, groupName = "debug", groupDisplayName = "DEBUG", groupStartCollapsed = false)]
-        string dockOtherNode = string.Empty;
-
-        private ModuleDockingNode dockingNode;
-        bool hasDockingNode;
-
-        public void Start()
-        {
-            dockingNode = part.FindModuleImplementing<ModuleDockingNode>();
-            hasDockingNode = dockingNode != null;
-
-            Fields["dockFSMState"].guiActive = Fields["dockFSMState"].guiActiveUnfocused = hasDockingNode;
-            Fields["dockOtherNode"].guiActive = Fields["dockOtherNode"].guiActiveUnfocused = hasDockingNode;
-        }
-
-        public void Update()
-        {
-            if (!HighLogic.LoadedSceneIsFlight)
+            foreach (VesselPhysicsHold instance in PhysicsHoldManager.Instance.OnHoldAndPackedInstances)
             {
+                instance.vessel.packed = false;
+            }
+
+            try
+            {
+                dockingNode.otherNode = dockingNode.FindNodeApproaches();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"ModuleDockingNode threw during FindNodeApproaches\n{e}");
+            }
+            finally
+            {
+                foreach (VesselPhysicsHold instance in PhysicsHoldManager.Instance.OnHoldAndPackedInstances)
+                {
+                    instance.vessel.packed = true;
+                }
+            }
+        }
+
+        private void DoPostOnGoOnRailsTweaks(bool doPack, bool doUnpack)
+        {
+            HashSet<uint> roboticChildParts = new HashSet<uint>();
+            GetRoboticChilds(roboticChildParts, vessel.rootPart, false);
+
+            HasRobotics = roboticChildParts.Count > 0;
+
+            if (!HasRobotics || !roboticsOverride)
+            {
+                foreach (Part part in vessel.parts)
+                    OnPackPartTweaks(part, doPack, doUnpack, true);
+            }
+            else
+            {
+                foreach (Part part in vessel.parts)
+                    OnPackPartTweaks(part, doPack, doUnpack, false, roboticChildParts.Contains(part.flightID));
+            }
+        }
+
+        private static void OnPackPartTweaks(Part part, bool doPack, bool doUnpack, bool stopRoboticsController, bool dontPackOverride = false)
+        {
+            // root part can never be unpacked as the orbit/floating origin/krakensbane code
+            // are checking the root part packed flag to select their handling mode
+            if (part.vessel.rootPart == part)
+            {
+                if (doPack)
+                    part.Pack();
+
                 return;
             }
 
-            partPacked = part.packed;
-            vesselPacked = vessel.packed;
-            vesselLanded = vessel.Landed;
-            vSituation = vessel.situation.ToString();
-            vHeightFromTerrain = vessel.heightFromTerrain.ToString("F1");
-
-            physicsHold = vessel.GetComponent<PhysicsHold>().physicsHold;
-
-            if (part.rb != null)
+            bool dontPack = dontPackOverride;
+            foreach (PartModule module in part.Modules)
             {
-                isKinematic = part.rb.isKinematic.ToString();
+                if (part.children.Count == 0 
+                    && module is ModuleDeployablePart mdp 
+                    && mdp.deployState != ModuleDeployablePart.DeployState.BROKEN 
+                    && (mdp.hasPivot || mdp.panelBreakTransform != null))
+                {
+                    dontPack |= true;
+                }
+                else if (module is ModuleDockingNode || module is ModuleGrappleNode)
+                {
+                    dontPack |= true;
+                }
+                // wheels should never be unpacked, no exceptions. Otherwise, vessel go boom.
+                else if (module is ModuleWheelBase)
+                {
+                    dontPack = false;
+                    break;
+                }
+                else if (stopRoboticsController && module is ModuleRoboticController mrc)
+                {
+                    mrc.SequenceStop();
+                }
             }
 
-            if (vessel.orbitDriver != null)
+            if (doUnpack && dontPack)
             {
-                orbitDriver = vessel.orbitDriver.updateMode.ToString();
+                part.Unpack();
+                return;
             }
 
-            if (hasDockingNode)
+            if (doPack && !dontPack)
             {
-                dockFSMState = dockingNode.state;
-                if (dockingNode.otherNode != null)
+                part.Pack();
+            }
+
+        }
+
+        private void GetRoboticChilds(HashSet<uint> roboticParts, Part parentPart, bool parentIsRobotic)
+        {
+            if (!parentIsRobotic && parentPart.isRobotic())
+            {
+                parentIsRobotic = true;
+            }
+
+            if (parentIsRobotic)
+            {
+                if (parentPart.vessel.rootPart == parentPart)
                 {
-                    dockOtherNode = "found on " + dockingNode.otherNode.part.vessel.vesselName;
+                    roboticParts.Clear();
+                    ScreenMessages.PostScreenMessage($"Can't enable robotics, the vessel root part\n{parentPart.partInfo.title}\nis a child of a robotic part");
+                    return;
                 }
-                else
-                {
-                    dockOtherNode = "none";
-                }
+
+                roboticParts.Add(parentPart.flightID);
+            }
+
+            foreach (Part child in parentPart.children)
+            {
+                GetRoboticChilds(roboticParts, child, parentIsRobotic);
             }
         }
+
+        #endregion
     }
 }
