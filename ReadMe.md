@@ -10,20 +10,16 @@
 #### Disclaimer :
 
 This is a proof-of-concept mod. As far as my tests have gone, it works reliably.
-However, I don't intend to support it actively. It way break with future KSP version, and it may stay unfixed if bugs are found.
-Also, due to the hacky nature of this mod, it is likely to cause major issues when used alongside other plugins.
+However, I don't intend to support it actively. It way break with future KSP versions, and it may stay unfixed if bugs are found.
+Be aware that due to the hacky nature of this mod, it is likely to cause issues when used alongside other plugins.
+I also don't intent to provide releases on the usual channels (KSP forums, CKAN, Spacedock, Curseforge...).
+Feel free to fork and adopt this mod as your own if you want to make it available for the masses.
 
 #### Technical :
 
-This add a VesselModule active on all loaded vessels. It allow disabling physics for landed vessels. 
-When the "physics hold" mode is enabled, all rigidbodies on the vessel are made kinematic by forcing the stock 
-"packed" (or "on rails") state normally used during "physics easing" and non-physics timewarp.
+This add a VesselModule active on all loaded vessels. It allow disabling physics for landed vessels. When the "physics hold" mode is enabled, all rigidbodies on the vessel are made kinematic by forcing the stock "packed" (or "on rails") state normally used during "physics easing" and non-physics timewarp.
 
-When enabled, all joint/force/torque physics are disabled, making the vessel an unmovable object fixed at
-a given altitude/longitude/latitude. You can still collide with it, but it will not react to collisions.
-
-The plugin adds a toolbar button opening a UI dialog listing all loaded vessels. From that dialog, the
-user can select the on-hold state for each vessel and access a few other options.
+When enabled, all rigibodies physics are disabled, making the vessel an unmovable object fixed at a given altitude/longitude/latitude. Non-kinematic vessels can still collide with it, but it will not react to collisions.
 
 #### Working and tested :
 - Docking : docking to a on hold vessel will seamlessly put the merged vessel on hold
@@ -41,7 +37,6 @@ user can select the on-hold state for each vessel and access a few other options
 
 - Vessels using multi-node docking sometimes throw errors on undocking or when using the "make primary node" button. Not sure exactly what is going on, but the errors don't seem to cause major issues and messing around with the "make primary node" or in last resort reloading the scene seems to fix it.
 - The stock "EVA ladder drift compensation" is disabled when the ladder is on a on-hold vessel
-- Docking/undocking on a on-hold vessel will cause a very small displacement every time. This can potentially become an issue over time. this said, the fix should be easy (save the original vessel latitude/longitude/altitude, and restore it after every undocking)
 - KAS errors out as soon as a KAS connection exists on a on-hold vessel, resulting in vessels being immediately deleted. It probably can work at least partially since it is able to handle things in timewarp, but that would likely require quite a bit of extra handling on its side.
 - ExtraPlanetaryLaunchpads seems to work if the vessel is on hold, but has an issue where the UI will stay stuck and never show the "Finalize" button when a vessel construction is being completed. Switching the scene will fix it.
    
