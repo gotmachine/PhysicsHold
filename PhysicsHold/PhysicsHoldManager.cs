@@ -194,12 +194,11 @@ namespace PhysicsHold
             for (int i = 0; i < physicsHoldInstances.Count; i++)
             {
                 DialogGuiVesselWidget widget = new DialogGuiVesselWidget(physicsHoldInstances[i]);
-
-                if (physicsHoldInstances[i].Vessel.isActiveVessel)
-                    widgets.Insert(0, widget);
-                else
-                    widgets.Add(widget);
+                widgets.Add(widget);
             }
+
+            Vector3 activeVesselPos = FlightGlobals.ActiveVessel.transform.position;
+            widgets.Sort((x, y) => Vector3.Distance(activeVesselPos, x.instance.Vessel.transform.position) < Vector3.Distance(activeVesselPos, y.instance.Vessel.transform.position) ? -1 : 1);
 
             DialogGUIBase[] scrollList = new DialogGUIBase[widgets.Count + 1];
 

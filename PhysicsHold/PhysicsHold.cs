@@ -3,44 +3,51 @@ using KSP.UI.Screens.Flight;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Reflection;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 /*
-This add a "Landed physics hold" PAW button on all command parts (and root part if no command part found), 
-available when the vessel is landed and has a surface speed less than 1 m/s (arbitrary, could more/less).
-When enabled, all rigibodies on the vessel are made kinematic by forcing the stock "packed" (or "on rails")
-state normally used during "physics easing" and non-physics timewarp.
+This add a VesselModule active on all loaded vessels. It allow disabling physics for landed vessels. 
+When the "physics hold" mode is enabled, all rigibodies on the vessel are made kinematic by forcing the stock 
+"packed" (or "on rails") state normally used during "physics easing" and non-physics timewarp.
 
 When enabled, all joint/force/torque physics are disabled, making the vessel an unmovable object fixed at
 a given altitude/longitude/latitude. You can still collide with it, but it will not react to collisions.
 
+The plugin adds a toolbar button opening a UI dialog listing all loaded vessels. From that dialog, the
+user can select the on-hold state for each vessel and access a few other options.
+
 Working and tested :
   - Docking : docking to a on hold vessel will seamlessly put the merged vessel on hold
   - Undocking : if the initial vessel is on hold, both resulting vessels will be on hold after undocking
-  - Grabbing/ungrabbing (Klaw) will ahve the same behavior as docking/undocking
+  - Grabbing/ungrabbing (Klaw) has the same behavior as docking/undocking
   - Decoupling : will insta-restore physics. Note that editor-docked docking ports are considered as decoupler
   - Collisions will destroy on-hold parts if crash tolerance is exceeded (and trigger decoupling events)
   - Breakable parts : solar panels, radiators and antennas will stay non-kinematic and can break.
   - EVAing / boarding (hack in place to enable the kerbal portraits UI)
   - Control input (rotation, translation, throttle...) is forced to zero by the stock vessel.packed check
   - KIS attaching parts work as expected
+  - Stock robotics can be manually re-enabled on a "on hold" vessel. Enabling the option will restore physics
+    to all child parts of a robotic part. Not that the option won't be available if the vessel root part is
+    a child of a robotic part. Also, wheels can't be physics-enabled so any robotic part attempting to move
+    a wheel won't be able to.
 
 Not working / Known issues :
   - Vessels using multi-node docking sometimes throw errors on undocking or when using the "make primary node"
     button. Not sure exactly what is going on, but the errors don't seem to cause major issues and messing
     around with the "make primary node" or in last resort reloading the scene seems to fix it.
-  - Stock robotic parts won't be able to move.
   - The stock "EVA ladder drift compensation" is disabled when the ladder is on a on-hold vessel
+  - Docking/undocking on a on-hold vessel will cause a very small displacement every time. This can 
+    potentially become an issue over time. this said, the fix should be easy (save the original
+    vessel latitude/longitude/altitude, and restore it after every undocking)
   - KAS errors out as soon as a KAS connection exists on a on-hold vessel, resulting in vessels being 
     immediately deleted. It probably can work at least partially since it is able to handle things in 
     timewarp, but that would likely require quite a bit of extra handling on its side.
    
 Untested / likely to have issues :
   - USI Konstruction things are reported to work, but I'm a bit skeptical and haven't done any test.
-  - Infernal Robotics : untested, will probably have issues
+  - Infernal Robotics : untested, probably won't work
 */
 
 namespace PhysicsHold
@@ -150,7 +157,7 @@ namespace PhysicsHold
 
         private IEnumerator WaitForVesselInitDoneOnLoad()
         {
-            while (!FlightGlobals.VesselsLoaded.Contains(vessel) || vessel.vesselName == null)
+            while (!FlightGlobals.VesselsLoaded.Contains(vessel) || vessel.vesselName == null || !vessel.parts[0].started)
             {
                 yield return new WaitForFixedUpdate();
             }
@@ -215,14 +222,6 @@ namespace PhysicsHold
             physicsHold = false;
 
             vessel.Landed = true;
-
-            // THIS WORKS, BUT TRYING SOMETHING ELSE
-            //if (hasNeverBeenUnpacked)
-            //{
-            //    hasNeverBeenUnpacked = false;
-            //    SetupWheels();
-            //    immediate = true;
-            //}
 
             if (SetupWheels())
             {
@@ -513,14 +512,15 @@ namespace PhysicsHold
             if (part.vessel != vessel)
                 return;
 
-            // I can't identify the exact root cause, but in the following scenario :
-            // - Scene was loaded with a on hold dominant vessel and a non-on-hold vessel
-            // - the non-on-hold vessel dock to the on-hold vessel
-            // - the non-on-hold vessel undock
-            // Then, if physics hold is being disabled on the on-hold vessel, the GoOffRails call
-            // will result in a bogus position/orbit, with NaN propagation crashing the game
-            // So to be on the safe side, we always unpack the vessel before stock does anything,
-            // and request an immediate repack in the next fixedupdate.
+            // Undocking require temporarily re-enabling physics on both vessels due to wheels submodules issues 
+            // that I failed to identify clearly. But the end result is that in some situations, when getting out
+            // of the packed state, wheels will restore humongous forces/velocities to their rigidbodies, expulsing
+            // the craft outside of the universe instantly.
+            // Re-enabling physics for a single frame works reliably so far, and is safer anyway.
+            // But it has the disadvantage that it cause a (very) small displacement of the vessel on every undocking,
+            // which might become an issue for long term bases that aren't supposed to ever get out of physics hold.
+            // As a workaround, we could save the original altitude/latitude/longtude the first time the vessel is put on
+            // hold, and restore it every time the vessel is reloaded, cancelling any long term position drift.
             if (physicsHold)
             {
                 DisablePhysicsHold(true);
@@ -550,7 +550,7 @@ namespace PhysicsHold
         /// <summary>
         /// Wheels have a wheelSetup() method being called by a coroutine launched from OnStart(). That coroutine is waiting indefinitely 
         /// for part.packed to become false, which won't happen if the vessel is in hold since the scene start. This is an issue if we want
-        /// to undock the vessel, as wheels have a onVesselUndocking callback that will nullref if the setup isn't done.
+        /// to dock/undock, as wheels have a onVesselUndocking/onVesselDock callback that will nullref if the setup isn't done.
         /// So, when we undock a packed vessel, if that vessel has never been unpacked, we manually call wheelSetup(), and cancel the
         /// coroutine (wheelSetup() will nullref if called twice).
         /// </summary>
@@ -570,8 +570,10 @@ namespace PhysicsHold
             return setupDone;
         }
 
-        //ModuleDockingNode FSM hacking, not needed but keeping it for reference in case we want to try enabling
-        //docking a packed vessel
+
+        /// <summary>
+        /// Patch every ModuleDockingNode FSM to trick them into believing on-hold vessels aren't packed
+        /// </summary>
         private IEnumerator SetupDockingNodesHoldState()
         {
             foreach (Part part in vessel.Parts)
@@ -601,7 +603,7 @@ namespace PhysicsHold
         /// <summary>
         /// Call the stock ModuleDockingNode.FindNodeApproaches(), and prevent it to ignore the vessels we are putting
         /// on physics hold by temporary setting Vessel.packed to false. Not that there is also a check on the Part.packed
-        /// field, but we don't need to handle it since we don't pack parts that have a ModuleDockingNode in a ready state.
+        /// field, but we don't need to handle it since we always unpack parts that have a ModuleDockingNode.
         /// </summary>
         private void FindNodeApproachesPatched(ModuleDockingNode dockingNode)
         {
@@ -712,7 +714,7 @@ namespace PhysicsHold
                 if (parentPart.vessel.rootPart == parentPart)
                 {
                     roboticParts.Clear();
-                    ScreenMessages.PostScreenMessage($"Can't enable robotics, the vessel root part\n{parentPart.partInfo.title}\nis a child of a robotic part");
+                    ScreenMessages.PostScreenMessage($"PhysicsHold\nCan't enable robotics, the vessel root part\n{parentPart.partInfo.title}\nis a child of a robotic part");
                     return;
                 }
 
