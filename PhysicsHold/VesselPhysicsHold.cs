@@ -23,8 +23,7 @@ namespace PhysicsHold
 
         private bool isEnabled = true;
 
-        private Vessel lastDecoupledVessel;
-        private bool delayedPhysicsHoldEnableRequest;
+        public bool delayedPhysicsHoldEnableRequest;
         private bool isChangingState;
 
         public bool HasRobotics { get; private set; }
@@ -95,7 +94,6 @@ namespace PhysicsHold
 
             Lib.LogDebug($"Starting for {vessel.vesselName}, physicsHold={physicsHold}");
 
-            lastDecoupledVessel = null;
             delayedPhysicsHoldEnableRequest = false;
             isChangingState = false;
 
@@ -103,12 +101,7 @@ namespace PhysicsHold
             StartCoroutine(WaitForVesselInitDoneOnLoad());
 
             GameEvents.onPartCouple.Add(OnPartCouple); // before docking/coupling
-            GameEvents.onPartCoupleComplete.Add(OnPartCoupleComplete); // after docking/coupling
-
             GameEvents.onPartDeCouple.Add(OnPartDeCouple); // before coupling
-            GameEvents.onPartDeCoupleComplete.Add(OnPartDeCoupleComplete); // after coupling
-
-            GameEvents.onPartUndock.Add(OnPartUndock); // before docking
             GameEvents.onVesselsUndocking.Add(OnVesselsUndocking); // after docking
         }
 
@@ -136,12 +129,7 @@ namespace PhysicsHold
         private void ClearEvents()
         {
             GameEvents.onPartCouple.Remove(OnPartCouple);
-            GameEvents.onPartCoupleComplete.Remove(OnPartCoupleComplete);
-
             GameEvents.onPartDeCouple.Remove(OnPartDeCouple);
-            GameEvents.onPartDeCoupleComplete.Remove(OnPartDeCoupleComplete);
-
-            GameEvents.onPartUndock.Remove(OnPartUndock);
             GameEvents.onVesselsUndocking.Remove(OnVesselsUndocking);
         }
 
@@ -177,8 +165,6 @@ namespace PhysicsHold
             Lib.LogDebug($"Disabling physics hold ({vessel.vesselName})");
 
             physicsHold = false;
-
-            vessel.Landed = true;
 
             if (SetupWheels())
             {
@@ -247,7 +233,6 @@ namespace PhysicsHold
             if (delayedPhysicsHoldEnableRequest && vessel.Landed)
             {
                 delayedPhysicsHoldEnableRequest = false;
-
                 EnablePhysicsHold();
             }
         }
@@ -339,6 +324,10 @@ namespace PhysicsHold
             if (TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRate > TimeWarp.MaxPhysicsRate)
                 return false;
 
+            // can't toggle during stock physics easing or if vessel is too far away
+            if (!physicsHold && vessel.packed)
+                return false;
+
             if (isChangingState || !HasRobotics)
                 return false;
 
@@ -414,25 +403,12 @@ namespace PhysicsHold
             // case A handling
             if (data.to.vessel == vessel && physicsHold)
             {
-                SetupWheels();
-
                 foreach (Part part in data.from.vessel.Parts)
                 {
                     OnPackPartTweaks(part, true, false, true);
                 }
             }
         }
-
-        // Called after a docking/coupling action has happend. All parts now belong to the same vessel.
-        private void OnPartCoupleComplete(GameEvents.FromToAction<Part, Part> data)
-        {
-            Lib.LogDebug($"OnPartCoupleComplete on {vessel.vesselName} from {data.from.vessel.vesselName} to {data.to.vessel.vesselName}");
-
-            if (data.from.vessel != vessel)
-                return;
-        }
-
-
 
         // called before a new vessel is created following intentional decoupler use or a joint failure
         // the part.vessel reference is still the old, non separated vessel
@@ -441,47 +417,9 @@ namespace PhysicsHold
             if (part.vessel != vessel)
                 return;
 
-            lastDecoupledVessel = vessel; // see why in OnPartDeCoupleComplete
-
             if (physicsHold)
             {
                 DisablePhysicsHold(true);
-            }
-        }
-
-        // called after a new vessel is created following intentional decoupler use or a joint failure
-        // we have no way to identify the "old" vessel from which the part comes from, so we have saved
-        // the vessel reference in OnPartCouple. Note that OnPartDeCouple/OnPartDeCoupleComplete are called
-        // at the begining/end of Part.decouple() (and it isn't recursive), so it's safe to do.
-        // Also, GameEvents.onPartDeCoupleNewVesselComplete with access to both old and new vessel has been 
-        // introduced in KSP 1.10 but for the sake of making this work in 1.8 - 1.9 we don't use it
-        private void OnPartDeCoupleComplete(Part newVesselPart)
-        {
-            if (lastDecoupledVessel == null || lastDecoupledVessel != vessel)
-                return;
-
-            lastDecoupledVessel = null;
-        }
-
-        // called before any undocking code is executed, all parts still belong to the original vessel
-        private void OnPartUndock(Part part)
-        {
-            if (part.vessel != vessel)
-                return;
-
-            // Undocking require temporarily re-enabling physics on both vessels due to wheels submodules issues 
-            // that I failed to identify clearly. But the end result is that in some situations, when getting out
-            // of the packed state, wheels will restore humongous forces/velocities to their rigidbodies, expulsing
-            // the craft outside of the universe instantly.
-            // Re-enabling physics for a single frame works reliably so far, and is safer anyway.
-            // But it has the disadvantage that it cause a (very) small displacement of the vessel on every undocking,
-            // which might become an issue for long term bases that aren't supposed to ever get out of physics hold.
-            // As a workaround, we could save the original altitude/latitude/longtude the first time the vessel is put on
-            // hold, and restore it every time the vessel is reloaded, cancelling any long term position drift.
-            if (physicsHold)
-            {
-                DisablePhysicsHold(true);
-                delayedPhysicsHoldEnableRequest = true;
             }
         }
 
@@ -493,7 +431,7 @@ namespace PhysicsHold
             if (vessel != oldVessel)
                 return;
 
-            if (delayedPhysicsHoldEnableRequest)
+            if (physicsHold)
             {
                 VesselPhysicsHold newVesselHoldInstance = newVessel.GetComponent<VesselPhysicsHold>();
                 newVesselHoldInstance.delayedPhysicsHoldEnableRequest = true;
@@ -519,11 +457,12 @@ namespace PhysicsHold
                 // TODO : cache the fieldinfo / methodinfo
                 if (!((bool)typeof(ModuleWheelBase).GetField("setup", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(wheel)))
                 {
-                    setupDone = true;
                     wheel.StopAllCoroutines();
+                    setupDone = true;
                     typeof(ModuleWheelBase).GetMethod("wheelSetup", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(wheel, null);
                 }
             }
+
             return setupDone;
         }
 

@@ -38,6 +38,9 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="..\GameData\PhysicsHold\0harmony.dll">
+      <Private>False</Private>
+    </Reference>
     <Reference Include="$(KSPInstallPath)\KSP_x64_Data\Managed\UnityEngine*.dll">
       <Private>False</Private>
     </Reference>
@@ -50,6 +53,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DialogGuiVesselWidget.cs" />
+    <Compile Include="HarmonyPatches.cs" />
     <Compile Include="ModulePackedDebugTest.cs" />
     <Compile Include="VesselPhysicsHold.cs" />
     <Compile Include="PhysicsHoldManager.cs" />
@@ -59,7 +63,8 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>
-      XCOPY /Y "$(TargetDir)PhysicsHold.dll" "$(KSPInstallPath)\GameData\PhysicsHold\"
-      XCOPY /Y "$(TargetDir)PhysicsHold.pdb" "$(KSPInstallPath)\GameData\PhysicsHold\"</PostBuildEvent>
+XCOPY /Y "$(TargetDir)PhysicsHold.dll" "$(KSPInstallPath)\GameData\PhysicsHold\"
+XCOPY /Y "$(TargetDir)PhysicsHold.pdb" "$(KSPInstallPath)\GameData\PhysicsHold\"
+    </PostBuildEvent>
   </PropertyGroup>
 </Project>

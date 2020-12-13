@@ -3,47 +3,9 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using KSP.UI.Screens;
-using Debug = UnityEngine.Debug;
 using UnityEngine.UI;
-using System.Text;
 using TMPro;
-using KSP.UI.TooltipTypes;
-using UnityEngine.EventSystems;
-
-/*
-This add a "Landed physics hold" PAW button on all command parts (and root part if no command part found), 
-available when the vessel is landed and has a surface speed less than 1 m/s (arbitrary, could more/less).
-When enabled, all rigibodies on the vessel are made kinematic by forcing the stock "packed" (or "on rails")
-state normally used during "physics easing" and non-physics timewarp.
-
-When enabled, all joint/force/torque physics are disabled, making the vessel an unmovable object fixed at
-a given altitude/longitude/latitude. You can still collide with it, but it will not react to collisions.
-
-Working and tested :
-  - Docking : docking to a on hold vessel will seamlessly put the merged vessel on hold
-  - Undocking : if the initial vessel is on hold, both resulting vessels will be on hold after undocking
-  - Grabbing/ungrabbing (Klaw) will ahve the same behavior as docking/undocking
-  - Decoupling : will insta-restore physics. Note that editor-docked docking ports are considered as decoupler
-  - Collisions will destroy on-hold parts if crash tolerance is exceeded (and trigger decoupling events)
-  - Breakable parts : solar panels, radiators and antennas will stay non-kinematic and can break.
-  - EVAing / boarding (hack in place to enable the kerbal portraits UI)
-  - Control input (rotation, translation, throttle...) is forced to zero by the stock vessel.packed check
-  - KIS attaching parts work as expected
-
-Not working / Known issues :
-  - Vessels using multi-node docking sometimes throw errors on undocking or when using the "make primary node"
-    button. Not sure exactly what is going on, but the errors don't seem to cause major issues and messing
-    around with the "make primary node" or in last resort reloading the scene seems to fix it.
-  - Stock robotic parts won't be able to move.
-  - The stock "EVA ladder drift compensation" is disabled when the ladder is on a on-hold vessel
-  - KAS errors out as soon as a KAS connection exists on a on-hold vessel, resulting in vessels being 
-    immediately deleted. It probably can work at least partially since it is able to handle things in 
-    timewarp, but that would likely require quite a bit of extra handling on its side.
-   
-Untested / likely to have issues :
-  - USI Konstruction things are reported to work, but I'm a bit skeptical and haven't done any test.
-  - Infernal Robotics : untested, will probably have issues
-*/
+using HarmonyLib;
 
 namespace PhysicsHold
 {
@@ -117,6 +79,9 @@ namespace PhysicsHold
                 }
             }
 
+            Harmony harmony = new Harmony("PhysicsHold");
+            harmony.PatchAll();
+
         }
 
         private void Start()
@@ -127,7 +92,6 @@ namespace PhysicsHold
             }
 
             launcher = ApplicationLauncher.Instance.AddModApplication(null, null, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT, Lib.LauncherTexture);
-            //launcher.VisibleInScenes = ApplicationLauncher.AppScenes.FLIGHT;
             launcher.onLeftClick += ToggleDialog;
 
             Lib.AddTooltipToObject(launcher.gameObject, "Physics hold");
@@ -137,11 +101,17 @@ namespace PhysicsHold
         {
             OnHoldAndPackedInstances.Clear();
 
-            foreach (VesselPhysicsHold instance in physicsHoldInstances)
+            for (int i = physicsHoldInstances.Count - 1; i >= 0; i--)
             {
-                if (instance.physicsHold && instance.Vessel.packed)
+                if (physicsHoldInstances[i].Vessel.state == Vessel.State.DEAD)
                 {
-                    OnHoldAndPackedInstances.Add(instance);
+                    physicsHoldInstances.RemoveAt(i);
+                    continue;
+                }
+
+                if (physicsHoldInstances[i].physicsHold && physicsHoldInstances[i].Vessel.packed)
+                {
+                    OnHoldAndPackedInstances.Add(physicsHoldInstances[i]);
                 }
             }
         }
@@ -214,9 +184,11 @@ namespace PhysicsHold
             dialog.Add(headerLayout);
             dialog.Add(scrollListItem);
 
+            DialogGUILabel kasInstalledLabel = null;
             if (isKASInstalled)
             {
-                dialog.Add(new DialogGUILabel("<color=orange><b>WARNING</b></color> : KAS is installed. \nHaving a KAS connection on a on-hold vessel <b>won't work</b> and will cause it to disappear from the game", true, false));
+                kasInstalledLabel = new DialogGUILabel("<color=orange><b>WARNING</b></color> : KAS is installed. \nHaving a KAS connection on a on-hold vessel <b>won't work</b> and will cause it to disappear from the game", true, false);
+                dialog.Add(kasInstalledLabel);
             }
 
             Rect posAndSize = new Rect(lastPopupPos.x, lastPopupPos.y, 320f, isKASInstalled ? 365f : 320f);
@@ -225,7 +197,7 @@ namespace PhysicsHold
                 new MultiOptionDialog("PhysicsHoldDialog", "", "", UISkinManager.defaultSkin, posAndSize, dialog.ToArray()), true, UISkinManager.defaultSkin, false);
 
 
-            //Destroy(currentDialog.gameObject.GetChild("Title"));
+            // wteak title text style
             TextMeshProUGUI titleText = title.uiItem.GetComponent<TextMeshProUGUI>();
             titleText.alignment = TextAlignmentOptions.Top;
             titleText.color = Color.white;
@@ -245,7 +217,6 @@ namespace PhysicsHold
             }
 
             // close button use custom sprite 
-
             ColorBlock buttonColorTintColors = new ColorBlock()
             {
                 colorMultiplier = 1f,
@@ -267,6 +238,11 @@ namespace PhysicsHold
             btnCpnt.navigation = new Navigation() { mode = Navigation.Mode.None };
             btnCpnt.colors = buttonColorTintColors;
             btnCpnt.image = imgCpnt;
+
+            if (kasInstalledLabel != null)
+            {
+                kasInstalledLabel.uiItem.GetComponent<TextMeshProUGUI>().alignment = TextAlignmentOptions.Top;
+            }
         }
     }
 }
