@@ -1,5 +1,5 @@
 This add a VesselModule active on all loaded vessels. It allow disabling physics for landed vessels. 
-When the "physics hold" mode is enabled, all rigibodies on the vessel are made kinematic by forcing the stock 
+When the "physics hold" mode is enabled, all rigidbodies on the vessel are made kinematic by forcing the stock 
 "packed" (or "on rails") state normally used during "physics easing" and non-physics timewarp.
 
 When enabled, all joint/force/torque physics are disabled, making the vessel an unmovable object fixed at
@@ -8,7 +8,7 @@ a given altitude/longitude/latitude. You can still collide with it, but it will 
 The plugin adds a toolbar button opening a UI dialog listing all loaded vessels. From that dialog, the
 user can select the on-hold state for each vessel and access a few other options.
 
-Working and tested :
+#### Working and tested :
   - Docking : docking to a on hold vessel will seamlessly put the merged vessel on hold
   - Undocking : if the initial vessel is on hold, both resulting vessels will be on hold after undocking
   - Grabbing/ungrabbing (Klaw) has the same behavior as docking/undocking
@@ -23,7 +23,7 @@ Working and tested :
     a child of a robotic part. Also, wheels can't be physics-enabled so any robotic part attempting to move
     a wheel won't be able to.
 
-Not working / Known issues :
+#### Not working / Known issues :
   - Vessels using multi-node docking sometimes throw errors on undocking or when using the "make primary node"
     button. Not sure exactly what is going on, but the errors don't seem to cause major issues and messing
     around with the "make primary node" or in last resort reloading the scene seems to fix it.
@@ -35,6 +35,9 @@ Not working / Known issues :
     immediately deleted. It probably can work at least partially since it is able to handle things in 
     timewarp, but that would likely require quite a bit of extra handling on its side.
    
-Untested / likely to have issues :
+#### Untested / likely to have issues :
   - USI Konstruction things are reported to work, but I'm a bit skeptical and haven't done any test.
   - Infernal Robotics : untested, probably won't work
+  
+#### Licence
+MIT
