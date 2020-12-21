@@ -1,6 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+
+  <Import Condition="Exists('$(SolutionDir)\KSPDevPath.xml')" Project="$(SolutionDir)\KSPDevPath.xml" />
+
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -12,6 +15,11 @@
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
+
+    <StartAction>Program</StartAction>
+    <StartProgram>$(KSPInstallPath)\KSP_x64_Dbg.exe</StartProgram>
+    <StartWorkingDirectory>$(KSPInstallPath)</StartWorkingDirectory>
+
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -32,22 +40,25 @@
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
-  <PropertyGroup>
-    <KSPInstallPath>K:\Projets\KSP\Kerbal Space Program 1.10.1 DEV</KSPInstallPath>
-  </PropertyGroup>
+
+
+  
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="..\GameData\PhysicsHold\0harmony.dll">
+    <Reference Include="$(SolutionDir)\GameData\PhysicsHold\0harmony.dll">
       <Private>False</Private>
     </Reference>
     <Reference Include="$(KSPInstallPath)\KSP_x64_Data\Managed\UnityEngine*.dll">
+      <Name>UnityEngine</Name>
       <Private>False</Private>
     </Reference>
     <Reference Include="$(KSPInstallPath)\KSP_x64_Data\Managed\Assembly-CSharp.dll">
+      <Name>Assembly-CSharp</Name>
       <Private>False</Private>
     </Reference>
     <Reference Include="$(KSPInstallPath)\KSP_x64_Data\Managed\Assembly-CSharp-firstpass.dll">
+      <Name>Assembly-CSharp-firstpass</Name>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -60,11 +71,18 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Lib.cs" />
   </ItemGroup>
+  
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup>
-    <PostBuildEvent>
-XCOPY /Y "$(TargetDir)PhysicsHold.dll" "$(KSPInstallPath)\GameData\PhysicsHold\"
-XCOPY /Y "$(TargetDir)PhysicsHold.pdb" "$(KSPInstallPath)\GameData\PhysicsHold\"
-    </PostBuildEvent>
-  </PropertyGroup>
+  
+  <Target Name="AfterBuild">
+
+    <ItemGroup>
+      <GameDataFiles Include="$(SolutionDir)\GameData\PhysicsHold\*.*" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(GameDataFiles)" DestinationFolder="$(KSPInstallPath)\GameData\PhysicsHold\" />
+    <Copy SourceFiles="$(TargetDir)PhysicsHold.dll" DestinationFolder="$(KSPInstallPath)\GameData\PhysicsHold\" />
+    <Copy SourceFiles="$(TargetDir)PhysicsHold.pdb" DestinationFolder="$(KSPInstallPath)\GameData\PhysicsHold\" />
+  </Target>
+
 </Project>
