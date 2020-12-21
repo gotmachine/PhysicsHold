@@ -132,8 +132,8 @@ namespace PhysicsHold
         {
             if (currentDialog != null)
             {
-                float xPos = (currentDialog.RTrf.position.x / (Screen.width)) + 0.5f;
-                float yPos = (currentDialog.RTrf.position.y / (Screen.height)) + 0.5f;
+                float xPos = currentDialog.RTrf.anchoredPosition.x / Screen.width;
+                float yPos = (Screen.height + currentDialog.RTrf.anchoredPosition.y) / Screen.height;
 
                 lastPopupPos = new Vector2(xPos, yPos);
                 currentDialog.Dismiss();
