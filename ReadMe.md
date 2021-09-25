@@ -1,4 +1,5 @@
 ### Features
+
 <img align="right" src="https://github.com/gotmachine/PhysicsHold/raw/master/Screenshot.png">
 
 - Add a toolbar button for managing physics on landed vessels
@@ -8,6 +9,10 @@
 - "On-hold" vessels can still be docked to and undocked from, and Kerbals can still board and go to EVA from them
 - KIS-adding parts works
 - Attaching on-hold vessel with KAS connections **doesn't work** and **will result in the vessel destruction**
+
+### Dependencies
+
+This plugin requires **[HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP)** to be installed. It's **isn't** bundled in the release and **must** be installed separately.
 
 ### Disclaimer
 
