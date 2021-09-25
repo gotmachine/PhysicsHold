@@ -14,6 +14,8 @@ namespace PhysicsHold
     {
         public static PhysicsHoldManager Instance { get; private set; }
 
+        private static bool harmonyPatchesApplied = false;
+
         private List<VesselPhysicsHold> physicsHoldInstances;
 
         public List<VesselPhysicsHold> OnHoldAndPackedInstances { get; private set; }
@@ -79,9 +81,12 @@ namespace PhysicsHold
                 }
             }
 
-            Harmony harmony = new Harmony("PhysicsHold");
-            harmony.PatchAll();
-
+            if (!harmonyPatchesApplied)
+            {
+                Harmony harmony = new Harmony("PhysicsHold");
+                harmony.PatchAll();
+                harmonyPatchesApplied = true;
+            }
         }
 
         private void Start()
