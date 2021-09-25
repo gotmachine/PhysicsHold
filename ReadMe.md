@@ -12,12 +12,12 @@
 
 ### Dependencies
 
-This plugin requires **[HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP)** to be installed. It's **isn't** bundled in the release and **must** be installed separately.
+This plugin requires **[HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP)** to be installed. It **isn't** bundled in the release and **must** be installed separately.
 
 ### Disclaimer
 
 This is a proof-of-concept mod. As far as my tests have gone, it works reliably.
-However, I don't intend to support it actively. It way break with future KSP versions, and it may stay unfixed if bugs are found.
+However, I don't intend to support it actively. It may break with future KSP versions, and it may stay unfixed if bugs are found.
 Be aware that due to the hacky nature of this mod, it is likely to cause issues when used alongside other plugins.
 I also don't intent to provide releases on the usual channels (KSP forums, CKAN, Spacedock, Curseforge...).
 Feel free to fork and adopt this mod as your own if you want to make it available for the masses.
