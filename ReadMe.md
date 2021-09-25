@@ -1,4 +1,6 @@
 ### Features
+<img align="right" src="https://github.com/gotmachine/PhysicsHold/raw/master/Screenshot.png">
+
 - Add a toolbar button for managing physics on landed vessels
 - Option for disabling physics (joints/force/torque/velocities) interactions for selected vessels. This noticeably reduce lag with large bases and prevent physics kraken attacks.
 - Option for partially re-enabling physics for robotic parts : allow stock robotics to work on "on hold" vessels
